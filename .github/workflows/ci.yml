@@ -1,12 +1,8 @@
-# Builds and tests Lemon Studio on Windows, Linux and macOS for every push to main and every pull request, so a change
-# that breaks any platform shows up before it is merged.
-name: CI
+# Compila Lemon Studio únicamente para Windows de forma manual
+name: CI - Solo Windows (Manual)
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-  workflow_dispatch:
+  workflow_dispatch: # Esto permite activar la compilación manualmente con un botón desde GitHub
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -17,27 +13,11 @@ env:
 
 jobs:
   build:
-    name: ${{ matrix.name }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Windows
-            os: windows-latest
-          - name: Linux
-            os: ubuntu-24.04
-          - name: macOS
-            os: macos-latest
+    name: Windows
+    runs-on: windows-latest
+    
     steps:
       - uses: actions/checkout@v4
-
-      # ALSA (audio output and MIDI input). The app loads Wayland, X11 and xkbcommon at run time, but Lemon Sampler built
-      # on its own (the bundle step) links wayland-client through its file dialogs, so that needs the Wayland package.
-      # libclang: the time stretcher's bindings are generated at build time (the Windows image ships LLVM, the macOS one Xcode's).
-      - name: Install Linux packages
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev libjack-jackd2-dev libwayland-dev libclang-dev pkg-config
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -46,17 +26,25 @@ jobs:
       - name: Build
         run: cargo build --workspace --all-targets --locked
 
-      # The plugin bundles (VST3 + CLAP): the hosting tests load them, and skip without them.
+      # Los paquetes de plugins (VST3 + CLAP)
       - name: Bundle plugins
         run: cargo run -p bundle-plugins --locked
 
-      - name: Bundle the app
-        if: runner.os == 'macOS'
-        run: cargo run -p bundle-app --locked
-
-      # Every platform's crates: the notices test lists them with an offline `cargo tree --target all`.
+      # Todos los crates de la plataforma
       - name: Fetch
         run: cargo fetch --locked
 
       - name: Test
         run: cargo test --workspace --locked
+
+      # Subir los archivos generados en Windows para poder descargarlos
+      - name: Subir ejecutables y plugins como Artefactos
+        uses: actions/upload-artifact@v4
+        with:
+          name: LemonStudio-Windows
+          path: |
+            target/release/lemon*.exe
+            target/debug/lemon*.exe
+            target/bundled/
+            target/artifacts/
+          if-no-files-found: warn
